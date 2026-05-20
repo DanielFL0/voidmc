@@ -2,11 +2,15 @@ FROM eclipse-temurin:21-jre-jammy
 
 WORKDIR /minecraft
 
-# Non-root runtime user + the persistent data directory.
-# eula.txt is seeded into the data dir so a fresh named volume inherits it.
+# Non-root runtime user + the data directory. eula.txt and server.properties
+# are baked onto the image layer (NOT a volume) so a rebuilt image always
+# ships the committed config. The world dirs are pre-created here so the
+# VOLUME mountpoints below inherit minecraft:minecraft ownership.
 RUN groupadd --system minecraft \
     && useradd --system --gid minecraft --home-dir /minecraft minecraft \
-    && mkdir -p /minecraft/data \
+    && mkdir -p /minecraft/data/world \
+                /minecraft/data/world_nether \
+                /minecraft/data/world_the_end \
     && echo "eula=true" > /minecraft/data/eula.txt \
     && chown -R minecraft:minecraft /minecraft
 
@@ -14,13 +18,16 @@ RUN groupadd --system minecraft \
 # kept OUT of the data volume so new releases actually take effect.
 COPY --chown=minecraft:minecraft paper.jar /minecraft/paper.jar
 COPY --chown=minecraft:minecraft plugins/ /minecraft/plugins/
+COPY --chown=minecraft:minecraft server.properties /minecraft/data/server.properties
 
 USER minecraft
 
-# Single "server data" volume: worlds (world, world_nether, world_the_end),
-# server.properties, logs, ops/whitelist/bans and usercache all live here.
+# Persist ONLY the world data. server.properties, eula.txt, logs and the
+# ops/whitelist/ban JSONs stay on the image layer and reset to the committed
+# copy on every container recreation. Do NOT mount /minecraft/data as a whole
+# or it would shadow the baked server.properties.
 WORKDIR /minecraft/data
-VOLUME ["/minecraft/data"]
+VOLUME ["/minecraft/data/world", "/minecraft/data/world_nether", "/minecraft/data/world_the_end"]
 
 EXPOSE 25565/tcp
 EXPOSE 19132/udp
