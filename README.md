@@ -4,6 +4,7 @@
 Server Software
 ------------
 | Type | Technology |
+|------|------------|
 | Server | [papermc](https://papermc.io/downloads/) |
 | Plugin | [geysermc](https://geysermc.org/download?project=geyser) |
 | Plugin | [floodgate](https://geysermc.org/download?project=floodgate) |
