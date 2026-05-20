@@ -1,0 +1,85 @@
+name: Build and publish Docker image
+
+on:
+  push:
+    tags:
+      - '[0-9][0-9].[0-9][0-9].[0-9]+'
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    
+    permissions:
+      contents: read
+      packages: write
+      attestations: write
+      id-token: write
+    
+    steps:
+      - name: Check out repository code
+        uses: actions/checkout@v6
+
+      - name: Lowercase the image name
+        run: echo "IMAGE_NAME=${IMAGE_NAME,,}" >> "$GITHUB_ENV"
+        env:
+          IMAGE_NAME: ${{ github.repository }}
+
+      - name: Log in to the Container registry
+        uses: docker/login-action@v4
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata (tags, labels) for Docker
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=ref,event=tag
+          flavor: |
+            latest=false
+
+      - name: Download server JAR and plugins
+        run: |
+          # Pinned, mutually compatible stable versions (Minecraft 1.21.11).
+          PAPER_VERSION="1.21.11"
+          PAPER_BUILD="69"
+          VIAVERSION_VERSION="5.9.1"
+
+          mkdir -p plugins
+
+          # PaperMC server JAR
+          curl -fL --retry 3 -o paper.jar \
+            "https://api.papermc.io/v2/projects/paper/versions/${PAPER_VERSION}/builds/${PAPER_BUILD}/downloads/paper-${PAPER_VERSION}-${PAPER_BUILD}.jar"
+
+          # ViaVersion - lets newer Minecraft clients connect
+          curl -fL --retry 3 -o plugins/ViaVersion.jar \
+            "https://github.com/ViaVersion/ViaVersion/releases/download/${VIAVERSION_VERSION}/ViaVersion-${VIAVERSION_VERSION}.jar"
+
+          # GeyserMC + Floodgate - Bedrock client support (latest stable build)
+          curl -fL --retry 3 -o plugins/Geyser-Spigot.jar \
+            "https://download.geysermc.org/v2/projects/geyser/versions/latest/builds/latest/downloads/spigot"
+          curl -fL --retry 3 -o plugins/floodgate-Spigot.jar \
+            "https://download.geysermc.org/v2/projects/floodgate/versions/latest/builds/latest/downloads/spigot"
+
+      - name: Build and push Docker image
+        id: push
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+
+      - name: Generate artifact attestation
+        uses: actions/attest@v4
+        with:
+          subject-name: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          subject-digest: ${{ steps.push.outputs.digest }}
+          push-to-registry: true
